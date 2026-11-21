@@ -1,0 +1,31 @@
+# ===== secrets: NEVER commit =====
+# home wifi password, HA api key, ota + fallback passwords
+esphome/secrets.yaml
+# Wyze login token (also stores developer key-id + api-key)
+.wyze_token
+**/.wyze_token
+*.secret
+.env
+
+# ===== generated at runtime =====
+# wyze token, DHCP leases (plug MACs), built firmware
+run/
+# ESPHome build dir; compiled images embed the wifi password in plaintext
+esphome/.esphome/
+# firmware images (ESPHome ones contain secrets; Wyze's aren't ours to redistribute)
+*.bin
+
+# ===== third-party, fetched on demand =====
+vendor/
+firmware/
+
+# ===== editor temp files (vim swap files can hold copies of secrets) =====
+*.swp
+*.swo
+*~
+.*.swp
+
+# Wyze account + developer key (see wyze.env.example)
+wyze.env
+# ap-as-home.sh renders a hostapd conf containing the home wifi password
+run/hostapd-home.conf

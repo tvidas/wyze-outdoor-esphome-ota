@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Refuse commits that contain secrets. Enabled via: git config core.hooksPath .githooks
+# Bypass (only if you are SURE): git commit --no-verify
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT" || exit 1
+fail=0; bad(){ printf '\033[1;31m[secret-check] %s\033[0m\n' "$*"; fail=1; }
+
+mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACMR)
+
+# 1. files that must never be committed
+for f in "${FILES[@]}"; do
+  case "$f" in
+    esphome/secrets.yaml|wyze.env|*.wyze_token|run/*|*/.esphome/*|*.bin|*.swp|.env|*/.env)
+      bad "forbidden file staged: $f";;
+  esac
+done
+
+# 2. the REAL secret values, read from the local (ignored) secret files
+VALUES=()
+if [ -f esphome/secrets.yaml ]; then
+  while IFS= read -r v; do VALUES+=("$v"); done < <(
+    sed -nE 's/^[A-Za-z0-9_]+:[[:space:]]*"?([^"#]*[^"#[:space:]])"?.*$/\1/p' esphome/secrets.yaml)
+fi
+if [ -f wyze.env ]; then
+  while IFS= read -r v; do VALUES+=("$v"); done < <(
+    sed -nE 's/^[A-Z_]+="?([^"]*)"?.*$/\1/p' wyze.env)
+fi
+for v in "${VALUES[@]}"; do
+  [ ${#v} -ge 6 ] || continue   # skip trivially short values
+  for f in "${FILES[@]}"; do
+    git show ":$f" 2>/dev/null | grep -qF -- "$v" && bad "$f contains a value from secrets.yaml / wyze.env"
+  done
+done
+
+# 3. generic patterns (ESPHome api key = 32 bytes base64, private keys)
+for f in "${FILES[@]}"; do
+  git show ":$f" 2>/dev/null | grep -qE '(^|[^A-Za-z0-9+/])[A-Za-z0-9+/]{43}=' \
+    && bad "$f contains something that looks like an ESPHome api_key (base64-32)"
+  git show ":$f" 2>/dev/null | grep -q -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+    && bad "$f contains a private key"
+done
+
+[ $fail = 0 ] || { echo "Commit blocked. Unstage with: git restore --staged <file>"; exit 1; }
